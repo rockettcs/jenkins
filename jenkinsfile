@@ -1,0 +1,55 @@
+
+def templatePath = "template.json"
+
+pipeline{
+    agent { label 'custommaven'}
+    environment {
+      PROJECT = "jenkins"
+      NAME = "getflightavailableinfo"
+      ENV = "dev"
+    }
+    stages{
+        stage('checkout'){
+            steps{
+                git 'https://github.com/imss-co-in/spring-boot-mongo-docker.git'
+            }
+        }    
+        stage('maven-build'){
+            steps{
+                sh 'mvn clean package'
+             }
+          
+        }
+        stage(deploytemp){
+            steps{
+                script{
+                    try{
+                      openshift.withCluster() {
+                        openshift.withProject(env.PROJECT) {
+                           echo "Using project: ${openshift.project()}"
+                           def templateSelector = openshift.selector( "template", "${NAME}")
+                           if(!openshift.selector("bc", [ template : "${NAME}"]).exists() || !openshift.selector("is", [ template : "${NAME}"]).exists())
+                           {
+                           if(openshift.selector("bc", [ template : "${NAME}"]).exists()){
+                           openshift.selector("bc", "${NAME}").delete();
+                           }
+                           if(openshift.selector("is", [ template : "${NAME}"]).exists()){
+                           openshift.selector("is", "${NAME}").delete();
+                           }
+                           openshift.newApp(templatePath)
+                           }
+                           else {
+                              echo "Using project: ${openshift.project()} , template already exists"
+                            }
+                        }
+                      }
+                    }
+                    catch( e ){
+                         echo e.getMessage()
+                          error "Deploy Template not successful."
+                    } 
+                }
+            }
+        }
+    }
+}
