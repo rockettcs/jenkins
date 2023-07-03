@@ -1,5 +1,5 @@
 FROM ubuntu:latest
-
+# this dokcer image for vunarability task
 # Install necessary packages (curl, jq)
 RUN apt-get update && apt-get install -y curl jq
 
