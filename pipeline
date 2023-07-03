@@ -1,0 +1,176 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: ci-pipeline-task
+spec:
+  params:
+    - default: 'https://github.com/imss-co-in/springboot-private.git'
+      description: The application git repository
+      name: APP_SOURCE_GIT
+      type: string
+    - default: master
+      description: The application git revision
+      name: APP_SOURCE_REVISION
+      type: string
+    - default: quay.io/development123/chanukya
+      description: docker image
+      name: IMAGE
+      type: string
+    - default: https://quay.io/
+      name: QUAYURL
+    - default: development123/chanukya
+      name: QUAYREPONAME
+    - default: QUAYAPITOKEN
+      name: chanu
+    - default: chanukya
+      name: CLUSTER_USER_NAME
+    - default: chanu@123
+      name: CLUSTER_USER_PASS
+    - default: 'https://api.ocp4.imss.com:6443'
+      name: clusterApiUrl
+    - default: chanu
+      name: PROJECT
+    - default: ayyg15139.me@gmail.com
+      name: sender
+    - default: recipients
+      name: ayyg15139.me@gmail.com
+    - default: pipelinesuccess
+      name: subjectsucess
+    - default: pipelinefail
+      name: subjectfail
+  tasks:
+    - name: source-clone
+      params:
+        - name: url
+          value: $(params.APP_SOURCE_GIT)
+        - name: revision
+          value: $(params.APP_SOURCE_REVISION)
+      taskRef:
+        kind: ClusterTask
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: workspace
+    - name: release-app
+      params:
+        - name: GOALS
+          value:
+            - package
+      runAfter:
+        - source-clone
+      taskRef:
+        kind: Task
+        name: maven
+      workspaces:
+        - name: source
+          workspace: workspace
+        - name: maven-settings
+          workspace: maven-settings
+    - name: build
+      params:
+        - name: IMAGE
+          value: '$(params.IMAGE):$(tasks.source-clone.results.commit)'
+      runAfter:
+        - release-app
+      taskRef:
+        kind: Task
+        name: buildah
+      workspaces:
+        - name: source
+          workspace: workspace
+    - name: vunlnerability-task
+      params: 
+        - name: QUAYURL
+          value: $(params.QUAYURL)
+        - name: QUAYREPONAME
+          value: $(params.QUAYREPONAME)
+        - name: tag
+          value: $(tasks.source-clone.results.commit)
+        - name: QUAYAPITOKEN
+          value: $(params.QUAYAPITOKEN)
+      runAfter: 
+        - build
+      taskRef:
+        kind: Task
+        name: vulnerability-scan-2
+    - name: build1
+      params:
+        - name: IMAGEDEV
+          value: quay.io/praveenrachamreddy/ci-pipeline1
+        - name: tag
+          value: $(tasks.source-clone.results.commit)-dev
+        - name: IMAGE
+          value: $(params.IMAGE)
+      runAfter:
+        - build
+      taskRef:
+        kind: Task
+        name: buildah-tag
+      workspaces:
+        - name: source
+          workspace: workspace
+  finally:
+    - name: pipeline-logs-fail
+      params: 
+        - name:  CLUSTER_USER_NAME
+          value: $(params.CLUSTER_USER_NAME)
+        - name: CLUSTER_USER_PASS
+          value: $(params.CLUSTER_USER_PASS)
+        - name: clusterApiUrl
+          value: $(params.clusterApiUrl)
+        - name: PROJECT
+          value: $(params.PROJECT)
+        - name: sender
+          value: $(params.sender)
+        - name: recipients
+          value: $(params.recipients)
+        - name: subject
+          value: $(params.subjectfail) 
+      taskRef:
+        kind: Task
+        name: pipeline-logs-tekton
+      workspaces:
+        - name: mail
+          workspace: workspace
+      when:
+        - input: Failed
+          operator: in
+          values:
+            - $(tasks.source-clone.status)
+            - $(tasks.release-app.status)
+            - $(tasks.build.status)
+            - $(tasks.vunlnerability-task.status)
+    - name: pipeline-logs-success
+      params: 
+        - name:  CLUSTER_USER_NAME
+          value: $(params.CLUSTER_USER_NAME)
+        - name: CLUSTER_USER_PASS
+          value: $(params.CLUSTER_USER_PASS)
+        - name: clusterApiUrl
+          value: $(params.clusterApiUrl)
+        - name: PROJECT
+          value: $(params.PROJECT) 
+        - name: sender
+          value: $(params.sender)
+        - name: recipients
+          value: $(params.recipients) 
+        - name: subject
+          value: $(params.subjectsuccess)
+      taskRef:
+        kind: Task
+        name: pipeline-logs-tekton
+      workspaces:
+        - name: mail
+          workspace: workspace
+      when:
+        - input: Failed
+          operator: notin
+          values:
+            - $(tasks.source-clone.status)
+            - $(tasks.release-app.status)
+            - $(tasks.build.status)
+            - $(tasks.vunlnerability-task.status)
+        
+  workspaces:
+    - name: workspace
+    - name: maven-settings
